@@ -246,27 +246,38 @@ fn parse_file_entries(buffer: &[u8]) -> Vec<FileEntry> {
         }
 
         let content_data_start = content_start + content_tag_bytes.len();
-        let next_tag_after_content = find_tag(buffer, content_data_start).map(|(i, _)| i).unwrap_or(buffer.len());
-        let content_data = &buffer[content_data_start..next_tag_after_content];
 
-        let (content_length, content_meta, content): (usize, Option<&[u8; 4]>, &[u8]) = if content_data.len() >= 8 {
-            let len = u32::from_be_bytes([content_data[0], content_data[1], content_data[2], content_data[3]]) as usize;
-            let meta = content_data.get(4..8).and_then(|b| b.try_into().ok());
-            let content_end = 8 + len;
-            let content = if content_end <= content_data.len() {
-                &content_data[8..content_end]
+        // Read the declared content length first to properly skip over binary content
+        // Format: 4 bytes (big-endian length) + 4 bytes (meta) + content
+        let (content_length, content_meta, content, content_data, next_tag_after_content): (usize, Option<&[u8; 4]>, &[u8], &[u8], usize) =
+            if buffer.len() >= content_data_start + 8 {
+                let len = u32::from_be_bytes([
+                    buffer[content_data_start],
+                    buffer[content_data_start + 1],
+                    buffer[content_data_start + 2],
+                    buffer[content_data_start + 3]
+                ]) as usize;
+                let meta = buffer.get(content_data_start + 4..content_data_start + 8).and_then(|b| b.try_into().ok());
+
+                // Calculate where content should end based on declared length
+                let content_end = content_data_start + 8 + len;
+                let actual_content_end = content_end.min(buffer.len());
+
+                let content = &buffer[content_data_start + 8..actual_content_end];
+                let content_data = &buffer[content_data_start..actual_content_end];
+
+                if actual_content_end < content_end {
+                    println!(
+                        "Warning: Declared content length ({}) exceeds available data ({}), slicing what is available.",
+                        len,
+                        buffer.len().saturating_sub(content_data_start + 8)
+                    );
+                }
+
+                (len, meta, content, content_data, actual_content_end)
             } else {
-                println!(
-                    "Warning: Declared content length ({}) exceeds available data ({}), slicing what is available.",
-                    len,
-                    content_data.len().saturating_sub(8)
-                );
-                &content_data[8..]
+                (0, None, &[][..], &buffer[content_data_start..content_data_start.min(buffer.len())], content_data_start)
             };
-            (len, meta, content)
-        } else {
-            (0, None, &[][..])
-        };
 
         entries.push(FileEntry {
             filename,
