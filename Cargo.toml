@@ -7,7 +7,7 @@ edition = "2021"
 authors = ["Tim Strazzere <tim@strazzere.com"]
 description = "Parsing autel firmwares"
 license = "MIT"
-repository = "https://github.com/your/repository"
+repository = "https://github.com/strazzere/autel-fw-parser"
 
 [dependencies]
 serde_json = "1.0.140"
